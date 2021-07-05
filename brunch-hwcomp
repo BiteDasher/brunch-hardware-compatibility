@@ -116,13 +116,18 @@ esac
 ques=0
 clear
 echo "------------------------------"
-echo "$model"
-echo "CPU: $cpu"
-echo "RAM: $ram"
-echo "Storage: $storage"
-echo "Brunch: $brunch"
-echo "Recovery: $board $version (build $build)"
-for func in android linux linux_install linux_run bluetooth wifi camera microphone touchscreen trackpad; do
+cat <<EOF | tee "$HOME"/MyFiles/Downloads/brunch-hwcomp.log.txt
+$model
+CPU: $cpu
+RAM: $ram
+Storage: $storage
+Brunch: $brunch
+Recovery: $board $version (build $build)
+$(for func in android linux linux_install linux_run bluetooth wifi camera microphone touchscreen trackpad; do
 	((ques++))
 	eval 'if [ -z "$'$func'" ]; then :; else echo -n '-'; text $ques; echo -e " \e[1m[$'$func']\e[0m"; fi'
-done
+done)
+EOF
+sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" -i "$HOME"/MyFiles/Downloads/brunch-hwcomp.log.txt
+echo ''
+echo "(Log saved to Downloads folder)"
