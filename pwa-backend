@@ -1,0 +1,142 @@
+#!/bin/bash
+case "$1" in
+system-info)
+cpu="$(awk -F '\\s*: | @' \
+	'/model name|Hardware|Processor|^cpu model|chip type|^cpu type/ {
+	cpu=$2; if ($1 == "Hardware") exit } END { print cpu }' "/proc/cpuinfo")"
+IFS=":" read -r a b < /proc/meminfo
+ram="${b/kB}"
+ram="$((ram/1024)) MB"
+rootdev="$(rootdev -d)"
+storage_prepare="$(< /sys/block/${rootdev##*/}/queue/rotational)"
+	case "$storage_prepare" in
+		1) storage_type="(HDD)" ;;
+		0) storage_type="(SSD)" ;;
+		*) storage_type="" ;;
+	esac
+storage="$(sudo lsblk -b -n -d -o SIZE $rootdev)"
+storage="$((storage/1024/1024/1024)) GB"
+if [[ "$rootdev" =~ .*"loop".* ]]; then
+	dualboot=1
+	if [ -n "$storage_type" ]; then
+		storage_model="(on ${storage_type//[()]/})"
+		storage="Image file ${storage_model}: $storage"
+	else
+		storage="Image file: $storage"
+	fi
+else
+	dualboot=0
+	storage_model="$(sudo lsblk -b -n -d -o MODEL $rootdev)"
+	if [ -z "$storage_model" ]; then
+		storage_model="Unknown drive ${storage_type} $storage"
+	fi
+	storage="$storage_model $storage"
+fi
+brunch="$(< /etc/brunch_version)"
+lsb_file="$(< /etc/lsb-release)"
+board="$(grep -o "^CHROMEOS_RELEASE_DESCRIPTION=.*" <<<"$lsb_file" | rev | cut -d " " -f 1,2 | rev)"
+board=$board
+board="${board% *}"
+version="$(grep -o "^CHROMEOS_RELEASE_CHROME_MILESTONE=.*" <<<"$lsb_file")"
+version="${version##*=}"
+build="$(grep -o "^CHROMEOS_RELEASE_VERSION=.*" <<<"$lsb_file")"
+build="${build##*=}"
+#$model
+cat <<EOF # | tee "$HOME"/MyFiles/Downloads/brunch-hwcomp.log.txt
+CPU: $cpu
+RAM: $ram
+Storage: $storage
+Brunch: $brunch
+Recovery: $board $version (build $build)
+EOF
+;;
+linux-install-check)
+hasorhasnot="$(vmc list)"
+if [[ "$hasorhasnot" =~ "termina".* ]]; then
+	echo 1
+else
+	echo 0
+fi
+;;
+parse)
+text() {
+	case "$1" in
+	1) echo "Does the Android Subsystem (Android apps) run?"; func=android ;;
+	2) echo "Is Linux container install option available?"; func=linux ;;
+	3) echo "Does Linux container install?"; func=linux_install ;;
+	4) echo "Does Linux terminal run?"; func=linux_run ;;
+	5) echo "Is Bluetooth working?"; func=bluetooth ;;
+	6) echo "Is WiFi working?"; func=wifi ;;
+	7) echo "Is the camera working?"; func=camera ;;
+	8) echo "Is microphone working?"; func=microphone ;;
+	9) echo "Does the touchscreen work?"; func=touchscreen ;;
+	10) echo "Does trackpad and gestures work?"; func=trackpad;;
+	esac
+}
+shift
+if [ "$1" == linux-installed ]; then
+	linux_installed=1
+	shift
+else
+	linux_installed=0
+fi
+ques=0
+if [[ "$linux_installed" == 0 && -z "${10}" ]]; then
+	exit 2
+fi
+while [[ "$ques" != 10 ]]; do
+	((ques++))
+	text "$ques" &>/dev/null
+	case "$ques" in 2|3)
+		if [ "$linux_installed" == 1 ]; then
+		linux=Yes
+		linux_install=Yes
+		[ "$ques" == 2 ] && continue 2 || continue
+		fi
+	esac
+	eval 'read -r '$func'' <<<"$1"
+	if (( "$ques" < 5 )) && [[ "$(eval 'echo $'$func'')" == 2 ]]; then
+		error ""
+		exit 3
+	fi
+	eval 'case "$'$func'" in 1) '$func'=Yes ;; 0) '$func'=No ;; 2) '$func'=2 ;; esac'
+	shift
+done
+ques=0
+for func in android linux linux_install linux_run bluetooth wifi camera microphone touchscreen trackpad; do
+	((ques++))
+	eval 'if [ "$'$func'" == 2 ]; then :; else echo -n "- "; text $ques; echo -e " \e[1m[$'$func']\e[0m"; fi'
+done
+;;
+model-prepare)
+d1="$(sudo dmidecode -s system-version)"
+d2="$(sudo dmidecode -s system-manufacturer)"
+d3="$(sudo dmidecode -s system-family)"
+d4="$(sudo dmidecode -s system-product-name)"
+echo "$d1"
+echo "$d2 $d3"
+echo "$d2 $d4"
+;;
+model-ask)
+ques=0
+while [ "$ques" != 3 ]; do
+	((ques++))
+	read -r _model
+	eval 'declare model'$ques'="'$_model'"'
+done
+read -r modelnumber
+case "$modelnumber" in
+	1) model="$model1" ;;
+	2) model="$model2" ;;
+	3) model="$model3" ;;
+	"") exit 4; ;;
+	*) model="$modelnumber" ;;
+esac
+echo "$model"
+;;
+remove-colors)
+sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" -i "$2"
+;;
+esac
+#echo ''
+#echo "(Log saved to Downloads folder)"
